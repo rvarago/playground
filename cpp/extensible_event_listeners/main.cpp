@@ -45,7 +45,7 @@ class event_dispatcher {
   using listener_container = Container<Listener<Event>>;
 
 public:
-  template <typename Event> auto register_on(Listener<Event> listener) -> void {
+  template <typename Event> auto listen(Listener<Event> listener) -> void {
     if (!event_to_listeners_.contains<listener_container<Event>>()) {
       event_to_listeners_.set<listener_container<Event>>({});
     }
@@ -75,7 +75,7 @@ struct on_click {
 int main() {
   auto dispatcher_with_listener_as_ptr = event_dispatcher{};
 
-  dispatcher_with_listener_as_ptr.register_on<on_click>([](auto const &ev) {
+  dispatcher_with_listener_as_ptr.listen<on_click>([](auto const &ev) {
     std::cout << "(x, y) = " << '(' << ev.mouse_x << ',' << ev.mouse_y << ')'
               << std::endl;
   });
@@ -85,7 +85,7 @@ int main() {
   auto dispatcher_with_listener_as_stdfunction =
       event_dispatcher<ListenerStdFunction>{};
 
-  dispatcher_with_listener_as_stdfunction.register_on<on_click>(
+  dispatcher_with_listener_as_stdfunction.listen<on_click>(
       [offset = 100](auto const &ev) {
         std::cout << "(x, y)[offset] = " << '(' << ev.mouse_x << ','
                   << ev.mouse_y << ")[" << offset << ']' << std::endl;
