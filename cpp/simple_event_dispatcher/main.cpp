@@ -46,7 +46,7 @@ public:
 
   constexpr void detach() && { m_detached = true; }
 
-  constexpr void unsubscribe() {
+  void unsubscribe() {
     if (!m_detached) {
       m_detached = true;
       if (auto dispatcher = m_dispatcher.lock(); dispatcher) {
