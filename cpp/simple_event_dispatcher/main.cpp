@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstddef>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -9,6 +10,15 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+// TODO: Explore
+// * Listeners that can subscribe, e.g. by coping the the list to avoid
+// iteration invalidation.
+// * Multi-threading with a working thread that process events.
+// * Open set of events, e.g. with std::any.
+// * Listeners that can return to indicate whether to re-schedule it.
+// * Different ownership models other than ref-counting.
+// * Template Handler instead of hard-coding std::function.
 
 struct MouseClicked {
   int x, y;
@@ -88,6 +98,12 @@ class Dispatcher : public std::enable_shared_from_this<Dispatcher> {
     explicit constexpr use_make_factory() = default;
   };
 
+  struct IllegalSubscribeException : std::exception {
+    const char *what() const noexcept override {
+      return "can't subscribe inside a listener";
+    }
+  };
+
 public:
   template <typename E> using Listener = std::function<void(E const &)>;
 
@@ -98,6 +114,10 @@ public:
   template <typename E>
     requires std::is_constructible_v<Event, E>
   auto subscribe(Listener<E> listener) -> SubscriptionToken {
+    if (is_dispatching) {
+      throw IllegalSubscribeException{};
+    }
+
     constexpr auto event_id = event_index<E>();
     auto listener_id = ++m_next_listener_id;
 
@@ -125,7 +145,22 @@ public:
 
   template <typename E>
     requires std::is_constructible_v<Event, E>
-  constexpr auto trigger(E const &e) const -> size_t {
+  constexpr auto dispatch(E const &e) -> size_t {
+    is_dispatching = true;
+    auto const total_receivers = do_dispatch(e);
+    is_dispatching = false;
+    return total_receivers;
+  }
+
+  explicit Dispatcher(use_make_factory) {}
+
+private:
+  using event_id_t = size_t;
+  using listener_id_t = size_t;
+
+  template <typename E>
+    requires std::is_constructible_v<Event, E>
+  constexpr auto do_dispatch(E const &e) -> size_t {
     constexpr auto event_id = event_index<E>();
     if (auto it = m_listeners.find(event_id); it != m_listeners.cend()) {
       auto const &listeners = it->second;
@@ -137,17 +172,12 @@ public:
     }
   }
 
-  explicit Dispatcher(use_make_factory) {}
-
-private:
-  using event_id_t = size_t;
-  using listener_id_t = size_t;
-
   std::unordered_map<
       event_id_t,
       std::vector<std::pair<listener_id_t, std::function<void(Event const &)>>>>
       m_listeners{};
   listener_id_t m_next_listener_id{0};
+  bool is_dispatching{false};
 };
 
 int main(int, char *[]) {
@@ -164,7 +194,9 @@ int main(int, char *[]) {
 
   // will be processed: we detached the token.
   dispatcher
-      ->subscribe<MouseClicked>([](MouseClicked const &e) {
+      ->subscribe<MouseClicked>([&](MouseClicked const &e) {
+        // will throw: listeners can't subscribe, lest we'd invalid iterators.
+        // dispatcher->subscribe<MouseClicked>([](MouseClicked const &) {});
         std::cout << "MouseClicked (detached): " << e.x << ", " << e.y << '\n';
       })
       .detach();
@@ -176,7 +208,7 @@ int main(int, char *[]) {
       });
 
   std::cout << "processed by: "
-            << dispatcher->trigger(MouseClicked{.x = 300, .y = 100}) << '\n';
+            << dispatcher->dispatch(MouseClicked{.x = 300, .y = 100}) << '\n';
 
   return 0;
 }
