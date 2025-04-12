@@ -172,6 +172,7 @@ void reportExceptionToFirebase(const std::exception_ptr exceptionPtr,
   }
 }
 
+// TODO: Add support for T = void.
 template <typename T> class TracedTask {
 public:
   struct promise_type;
