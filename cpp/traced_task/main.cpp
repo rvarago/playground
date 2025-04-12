@@ -6,10 +6,11 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace util {
@@ -173,14 +174,19 @@ void reportExceptionToFirebase(const std::exception_ptr exceptionPtr,
 }
 
 // TODO: Add support for T = void.
+// TODO: Write an owning_handle that is non-copyable, moves properly and knows
+// how to destroy itself and therefore we don't need write special member
+// functions for TracedTask.
 template <typename T> class TracedTask {
 public:
   struct promise_type;
   using handle_type = std::coroutine_handle<promise_type>;
 
   struct promise_type {
-    std::optional<T> result;
-    std::exception_ptr exception{nullptr};
+    struct Success {
+      T value;
+    };
+    std::variant<std::exception_ptr, Success> result;
     std::vector<my_backtrace::StackFrame> stackTrace;
 
     TracedTask get_return_object() {
@@ -200,8 +206,8 @@ public:
         std::coroutine_handle<> await_suspend(handle_type h) noexcept {
           // Report any unhandled exception to Firebase before terminating.
           auto &p = h.promise();
-          if (p.exception) {
-            reportExceptionToFirebase(p.exception, p.stackTrace);
+          if (auto *e = std::get_if<std::exception_ptr>(&p.result); e) {
+            reportExceptionToFirebase(*e, p.stackTrace);
           }
           // We're done, allow the coroutine to be destroyed.
           return std::noop_coroutine();
@@ -217,17 +223,14 @@ public:
     void return_value(U &&value)
     // requires(!std::is_same_v<T, void>)
     {
-      result = std::forward<U>(value);
+      result = Success{std::forward<U>(value)};
     }
 
     // void return_void()
     //   requires std::is_same_v<T, void>
     // {}
 
-    void unhandled_exception() {
-      // Store the exception and stack trace
-      exception = std::current_exception();
-    }
+    void unhandled_exception() { result = std::current_exception(); }
   };
 
   TracedTask() : handle(nullptr) {}
@@ -240,15 +243,12 @@ public:
     }
   }
 
-  // Non-copyable
   TracedTask(const TracedTask &) = delete;
   TracedTask &operator=(const TracedTask &) = delete;
 
-  // Movable
   TracedTask(TracedTask &&other) noexcept : handle(other.handle) {
     other.handle = nullptr;
   }
-
   TracedTask &operator=(TracedTask &&other) noexcept {
     if (this != &other) {
       if (handle) {
@@ -264,16 +264,15 @@ public:
 
   T result() const {
     if (!is_ready()) {
-      throw std::runtime_error("Task not completed");
+      throw std::runtime_error("TracedTask not completed");
     }
 
-    if (handle.promise().exception) {
-      std::rethrow_exception(handle.promise().exception);
-    }
+    struct accessor {
+      auto operator()(typename promise_type::Success s) -> T { return s.value; }
+      auto operator()(std::exception_ptr e) -> T { std::rethrow_exception(e); }
+    };
 
-    if constexpr (!std::is_same_v<T, void>) {
-      return *handle.promise().result;
-    }
+    return std::visit(accessor{}, handle.promise().result);
   }
 
   void run() {
@@ -308,15 +307,19 @@ void runTask(TracedTask<T> &&task, std::string_view taskName) {
   }
 }
 
+// FIXME: It doesn't capture traces from regular routines.
+// auto foo() -> int { throw std::runtime_error{"boom from foo"}; }
+
 // This one throws an exception.
-TracedTask<int> thirdLevelTask() {
+auto thirdLevelTask() -> TracedTask<int> {
+  // foo();
   std::cout << "  Third level task - Throwing exception" << std::endl;
   // This simulates some deep operation failing.
   throw std::runtime_error("Exception from third level task");
   co_return 42; // Never reached
 }
 
-TracedTask<int> secondLevelTask() {
+auto secondLevelTask() -> TracedTask<int> {
   std::cout << " Second level task - Calling third level" << std::endl;
   // This await will propagate the exception.
   int result = co_await thirdLevelTask();
@@ -324,7 +327,7 @@ TracedTask<int> secondLevelTask() {
 }
 
 // Top-level coroutine - calls the second level and throws.
-TracedTask<int> topLevelTask() {
+auto topLevelTask() -> TracedTask<int> {
   std::cout << "Top level task - Calling second level" << std::endl;
 
   // We don't handle the exception here, so it will be reported.
@@ -357,8 +360,8 @@ int main() {
   std::cout << "\n";
 
   // Example 2: Handled exception across coroutines.
-  std::cout << "Example 2: Handled exception across coroutines\n";
-  runTask(handledExceptionTask(), "HandledExceptionTask");
+  // std::cout << "Example 2: Handled exception across coroutines\n";
+  // runTask(handledExceptionTask(), "HandledExceptionTask");
 
   return 0;
 }
