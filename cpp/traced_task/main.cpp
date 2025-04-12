@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace detail {
+namespace util {
 template <typename T>
 using unique_ptr_for_free = std::unique_ptr<T, auto(*)(void *)->void>;
 
@@ -24,7 +24,7 @@ constexpr auto make_unique_for_free(T *ptr) -> unique_ptr_for_free<T> {
 constexpr auto ptr_to_string(const char *ptr) -> std::string {
   return ptr ? std::string{ptr} : std::string{};
 }
-} // namespace detail
+} // namespace util
 
 // TODO: Replace this with C++23 std::backtrace.
 namespace my_backtrace {
@@ -52,18 +52,18 @@ auto intoSymbolicInfo(void *address, const char *symbol_backtrace)
 
   auto const symbol = [&] {
     if (!dl_info.dli_sname) {
-      return detail::ptr_to_string(symbol_backtrace);
+      return util::ptr_to_string(symbol_backtrace);
     }
 
     auto status = -1;
-    auto const symbol_demangled = detail::make_unique_for_free(
+    auto const symbol_demangled = util::make_unique_for_free(
         abi::__cxa_demangle(dl_info.dli_sname, nullptr, nullptr, &status));
 
-    return status != 0 ? detail::ptr_to_string(symbol_demangled.get())
-                       : detail::ptr_to_string(symbol_backtrace);
+    return status != 0 ? util::ptr_to_string(symbol_demangled.get())
+                       : util::ptr_to_string(symbol_backtrace);
   }();
 
-  auto const fileName = detail::ptr_to_string(dl_info.dli_fname);
+  auto const fileName = util::ptr_to_string(dl_info.dli_fname);
 
   auto const offset = [&] {
     if (dl_info.dli_fbase) {
@@ -90,7 +90,7 @@ template <int DEPTH_MAX = 128> auto current() -> StackTrace {
   }
 
   auto const callstack_symbols =
-      detail::make_unique_for_free(backtrace_symbols(callstack, nframes));
+      util::make_unique_for_free(backtrace_symbols(callstack, nframes));
 
   if (!callstack_symbols) {
     return stackTrace;
@@ -113,7 +113,7 @@ template <int DEPTH_MAX = 128> auto current() -> StackTrace {
 }
 
 auto toString(const StackTrace &stackTrace) -> std::string {
-  std::stringstream ss;
+  std::stringstream ss{};
 
   for (size_t i = 0; i < stackTrace.size(); ++i) {
     const auto &frame = stackTrace[i];
