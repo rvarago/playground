@@ -17,6 +17,7 @@ struct ResourceData_C {};
 
 class ResourceFactory;
 
+// TODO: Make Key type/value private.
 struct Resource {
   struct Key {
     size_t type_index{};
