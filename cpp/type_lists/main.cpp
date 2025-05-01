@@ -15,26 +15,6 @@ struct ResourceData_B {
 
 struct ResourceData_C {};
 
-namespace detail {
-
-using ResourceData =
-    std::variant<ResourceData_A, ResourceData_B, ResourceData_C>;
-
-template <typename R, size_t I = 0> consteval auto resource_index() -> size_t {
-  static_assert(I < std::variant_size_v<ResourceData>,
-                "resource type not found");
-
-  if constexpr (std::is_same_v<R,
-                               std::variant_alternative_t<I, ResourceData>>) {
-    // TODO: Guard against duplicated resource types.
-    return I;
-  } else {
-    return resource_index<R, I + 1>();
-  }
-}
-
-} // namespace detail
-
 class ResourceFactory;
 
 struct Resource {
@@ -43,9 +23,7 @@ struct Resource {
     size_t in_container_index{};
   };
 
-  template <typename R> constexpr auto is() -> bool {
-    return key.type_index == detail::resource_index<R>();
-  }
+  template <typename R> constexpr auto is() -> bool;
 
   template <typename R> constexpr auto as() -> R &;
 
@@ -72,11 +50,28 @@ public:
   }
 
 private:
+  using ResourceData =
+      std::variant<ResourceData_A, ResourceData_B, ResourceData_C>;
+
+  template <typename R, size_t I = 0>
+  static consteval auto resource_index() -> size_t {
+    static_assert(I < std::variant_size_v<ResourceData>,
+                  "resource type not found");
+
+    if constexpr (std::is_same_v<R,
+                                 std::variant_alternative_t<I, ResourceData>>) {
+      // TODO: Guard against duplicated resource types.
+      return I;
+    } else {
+      return resource_index<R, I + 1>();
+    }
+  }
+
   template <typename R>
   constexpr auto findSlot() -> std::pair<std::vector<R> &, size_t> {
     // TODO: Enforce consistency between indices and containers, pull magic
     // numbers into constants, etc.
-    constexpr auto type_index = detail::resource_index<R>();
+    constexpr auto type_index = resource_index<R>();
     if constexpr (type_index == 0) {
       return {as, type_index};
     } else if constexpr (type_index == 1) {
@@ -95,11 +90,16 @@ private:
   std::vector<ResourceData_C> cs{};
 };
 
+template <typename R> constexpr auto Resource::is() -> bool {
+  return key.type_index == ResourceFactory::resource_index<R>();
+}
+
 // PRE: Resource holds an R, otherwise this is UB.
 template <typename R> constexpr auto Resource::as() -> R & {
   std::pair<std::vector<R> &, size_t> slot = factory->findSlot<R>();
   return slot.first[key.in_container_index];
 }
+
 
 auto main(int, char *[]) -> int {
   ResourceFactory factory{};
