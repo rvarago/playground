@@ -70,17 +70,16 @@ private:
 
   template <typename R>
   constexpr auto findSlot() -> std::pair<std::vector<R> &, size_t> {
-    // TODO: Enforce consistency between indices and containers, pull magic
-    // numbers into constants, etc.
     constexpr auto type_index = resource_index<R>();
-    if constexpr (type_index == 0) {
+    if constexpr (type_index == resource_index<ResourceData_A>()) {
       return {as, type_index};
-    } else if constexpr (type_index == 1) {
+    } else if constexpr (type_index == resource_index<ResourceData_B>()) {
       return {bs, type_index};
-    } else if constexpr (type_index == 2) {
+    } else if constexpr (type_index == resource_index<ResourceData_C>()) {
       return {cs, type_index};
     } else {
-      throw "resource container not found";
+      // This cannot happen, because resource_index has already handled it.
+      throw "absurd: resource container not found";
     }
   }
 
