@@ -5,6 +5,23 @@
 #include <variant>
 #include <vector>
 
+namespace utils {
+
+template <typename Variant, typename T, size_t I = 0>
+consteval auto variant_index_v() -> size_t {
+  static_assert(I < std::variant_size_v<Variant>, "T is not in Variant");
+
+  if constexpr (std::is_same_v<T, std::variant_alternative_t<I, Variant>>) {
+    // TODO: Guard against duplicated T.
+    return I;
+  } else {
+    return variant_index_v<Variant, T, I + 1>();
+  }
+}
+} // namespace utils
+
+
+
 struct ResourceData_A {
   int id{};
 };
@@ -19,6 +36,7 @@ class ResourceFactory;
 
 class Resource {
 public:
+  // TODO: Maybe constrain these with concepts for nicer error-messages?
   template <typename R> [[nodiscard]] constexpr auto is() -> bool;
 
   template <typename R> [[nodiscard]] constexpr auto as() -> R &;
@@ -29,7 +47,7 @@ private:
   friend ResourceFactory;
 
   struct Key {
-    size_t type_index{};
+    size_t to_container_index{};
     size_t in_container_index{};
   };
 
@@ -48,13 +66,13 @@ class ResourceFactory {
 public:
   template <typename R, typename... Args>
   [[nodiscard]] constexpr auto make(int amount, Args &&...args) -> Resource {
-    std::pair<std::vector<R> &, size_t> slot = findSlot<R>();
-    slot.first.emplace_back(std::forward<Args>(args)...);
-    auto const in_container_index = slot.first.size() - 1;
+    auto [container, to_container_index] = findContainer<R>();
+    container.emplace_back(std::forward<Args>(args)...);
+    auto const in_container_index = container.size() - 1;
 
     return Resource{amount,
                     Resource::Key{
-                        .type_index = slot.second,
+                        .to_container_index = to_container_index,
                         .in_container_index = in_container_index,
                     },
                     *this};
@@ -64,29 +82,19 @@ private:
   using ResourceData =
       std::variant<ResourceData_A, ResourceData_B, ResourceData_C>;
 
-  template <typename R, size_t I = 0>
-  static consteval auto resource_index() -> size_t {
-    static_assert(I < std::variant_size_v<ResourceData>,
-                  "resource type not found");
-
-    if constexpr (std::is_same_v<R,
-                                 std::variant_alternative_t<I, ResourceData>>) {
-      // TODO: Guard against duplicated resource types.
-      return I;
-    } else {
-      return resource_index<R, I + 1>();
-    }
-  }
+  template <typename R>
+  static constexpr auto container_index_of =
+      utils::variant_index_v<ResourceData, R>();
 
   template <typename R>
-  constexpr auto findSlot() -> std::pair<std::vector<R> &, size_t> {
-    constexpr auto type_index = resource_index<R>();
-    if constexpr (type_index == resource_index<ResourceData_A>()) {
-      return {as, type_index};
-    } else if constexpr (type_index == resource_index<ResourceData_B>()) {
-      return {bs, type_index};
-    } else if constexpr (type_index == resource_index<ResourceData_C>()) {
-      return {cs, type_index};
+  constexpr auto findContainer() -> std::pair<std::vector<R> &, size_t> {
+    constexpr auto index = container_index_of<R>;
+    if constexpr (index == container_index_of<ResourceData_A>) {
+      return {as, index};
+    } else if constexpr (index == container_index_of<ResourceData_B>) {
+      return {bs, index};
+    } else if constexpr (index == container_index_of<ResourceData_C>) {
+      return {cs, index};
     } else {
       // This cannot happen, because resource_index has already handled it.
       throw "absurd: resource container not found";
@@ -101,13 +109,13 @@ private:
 };
 
 template <typename R> constexpr auto Resource::is() -> bool {
-  return key_.type_index == ResourceFactory::resource_index<R>();
+  return key_.to_container_index == ResourceFactory::container_index_of<R>;
 }
 
-// PRE: Resource holds an R, otherwise this is UB.
+// PRE: Resource holds an R, otherwise UB ensues.
 template <typename R> constexpr auto Resource::as() -> R & {
-  std::pair<std::vector<R> &, size_t> slot = factory_->findSlot<R>();
-  return slot.first[key_.in_container_index];
+  auto [container, _] = factory_->findContainer<R>();
+  return container[key_.in_container_index];
 }
 
 auto main(int, char *[]) -> int {
@@ -122,7 +130,6 @@ auto main(int, char *[]) -> int {
   std::cout << "id: " << r1.as<ResourceData_A>().id << std::endl;
 
   std::cout << "\n\nR2:\n";
-
   auto r2 = factory.make<ResourceData_B>(200, "foo");
   std::cout << r2.is<ResourceData_A>() << std::endl;
   std::cout << r2.is<ResourceData_B>() << std::endl;
@@ -131,7 +138,6 @@ auto main(int, char *[]) -> int {
   std::cout << "name: " << r2.as<ResourceData_B>().name << std::endl;
 
   std::cout << "\n\nR3:\n";
-
   auto r3 = factory.make<ResourceData_A>(300, 666);
   std::cout << r3.is<ResourceData_A>() << std::endl;
   std::cout << r3.is<ResourceData_B>() << std::endl;
