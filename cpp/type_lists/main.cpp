@@ -96,7 +96,7 @@ private:
     } else if constexpr (index == container_index_of<ResourceData_C>) {
       return {cs, index};
     } else {
-      // This cannot happen, because resource_index has already handled it.
+      // This cannot happen, because we static_assert the index.
       throw "absurd: resource container not found";
     }
   }
