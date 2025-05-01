@@ -23,9 +23,9 @@ struct Resource {
     size_t in_container_index{};
   };
 
-  template <typename R> constexpr auto is() -> bool;
+  template <typename R> [[nodiscard]] constexpr auto is() -> bool;
 
-  template <typename R> constexpr auto as() -> R &;
+  template <typename R> [[nodiscard]] constexpr auto as() -> R &;
 
   int amount{};
   Key key{};
@@ -36,7 +36,7 @@ class ResourceFactory {
 
 public:
   template <typename R, typename... Args>
-  constexpr auto make(int amount, Args &&...args) -> Resource {
+  [[nodiscard]] constexpr auto make(int amount, Args &&...args) -> Resource {
     std::pair<std::vector<R> &, size_t> slot = findSlot<R>();
     slot.first.push_back(R{std::forward<Args>(args)...});
     auto const in_container_index = slot.first.size() - 1;
@@ -99,7 +99,6 @@ template <typename R> constexpr auto Resource::as() -> R & {
   std::pair<std::vector<R> &, size_t> slot = factory->findSlot<R>();
   return slot.first[key.in_container_index];
 }
-
 
 auto main(int, char *[]) -> int {
   ResourceFactory factory{};
