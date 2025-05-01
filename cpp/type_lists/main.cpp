@@ -39,7 +39,7 @@ public:
   template <typename R, typename... Args>
   [[nodiscard]] constexpr auto make(int amount, Args &&...args) -> Resource {
     std::pair<std::vector<R> &, size_t> slot = findSlot<R>();
-    slot.first.push_back(R{std::forward<Args>(args)...});
+    slot.first.emplace_back(std::forward<Args>(args)...);
     auto const in_container_index = slot.first.size() - 1;
 
     return Resource{amount,
@@ -103,26 +103,32 @@ template <typename R> constexpr auto Resource::as() -> R & {
 
 auto main(int, char *[]) -> int {
   ResourceFactory factory{};
+
+  std::cout << "R1:\n";
   auto r1 = factory.make<ResourceData_A>(100, 42);
   std::cout << r1.is<ResourceData_A>() << std::endl;
   std::cout << r1.is<ResourceData_B>() << std::endl;
   std::cout << r1.is<ResourceData_C>() << std::endl;
-  std::cout << r1.amount << std::endl;
-  std::cout << r1.as<ResourceData_A>().id << std::endl;
+  std::cout << "amount: " << r1.amount << std::endl;
+  std::cout << "id: " << r1.as<ResourceData_A>().id << std::endl;
+
+  std::cout << "\n\nR2:\n";
 
   auto r2 = factory.make<ResourceData_B>(200, "foo");
   std::cout << r2.is<ResourceData_A>() << std::endl;
   std::cout << r2.is<ResourceData_B>() << std::endl;
   std::cout << r2.is<ResourceData_C>() << std::endl;
-  std::cout << r2.amount << std::endl;
-  std::cout << r2.as<ResourceData_B>().name << std::endl;
+  std::cout << "amount: " << r2.amount << std::endl;
+  std::cout << "name: " << r2.as<ResourceData_B>().name << std::endl;
+
+  std::cout << "\n\nR3:\n";
 
   auto r3 = factory.make<ResourceData_A>(300, 666);
   std::cout << r3.is<ResourceData_A>() << std::endl;
   std::cout << r3.is<ResourceData_B>() << std::endl;
   std::cout << r3.is<ResourceData_C>() << std::endl;
-  std::cout << r3.amount << std::endl;
-  std::cout << r3.as<ResourceData_A>().id << std::endl;
+  std::cout << "amount: " << r3.amount << std::endl;
+  std::cout << "id: " << r3.as<ResourceData_A>().id << std::endl;
 
   return 0;
 }
