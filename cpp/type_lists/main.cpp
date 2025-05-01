@@ -17,20 +17,30 @@ struct ResourceData_C {};
 
 class ResourceFactory;
 
-// TODO: Make Key type/value private.
-struct Resource {
+class Resource {
+public:
+  template <typename R> [[nodiscard]] constexpr auto is() -> bool;
+
+  template <typename R> [[nodiscard]] constexpr auto as() -> R &;
+
+  [[nodiscard]] auto amount() -> int { return amount_; }
+
+private:
+  friend ResourceFactory;
+
   struct Key {
     size_t type_index{};
     size_t in_container_index{};
   };
 
-  template <typename R> [[nodiscard]] constexpr auto is() -> bool;
+  explicit Resource(int amount, Key key, ResourceFactory &factory)
+      : amount_{amount},
+        key_{key},
+        factory_{&factory} {}
 
-  template <typename R> [[nodiscard]] constexpr auto as() -> R &;
-
-  int amount{};
-  Key key{};
-  ResourceFactory *factory{}; // TODO: Re-think ownership, maybe a weak_ptr?
+  int amount_{};
+  Key key_{};
+  ResourceFactory *factory_{}; // TODO: Re-think ownership, maybe a weak_ptr?
 };
 
 class ResourceFactory {
@@ -47,7 +57,7 @@ public:
                         .type_index = slot.second,
                         .in_container_index = in_container_index,
                     },
-                    this};
+                    *this};
   }
 
 private:
@@ -91,13 +101,13 @@ private:
 };
 
 template <typename R> constexpr auto Resource::is() -> bool {
-  return key.type_index == ResourceFactory::resource_index<R>();
+  return key_.type_index == ResourceFactory::resource_index<R>();
 }
 
 // PRE: Resource holds an R, otherwise this is UB.
 template <typename R> constexpr auto Resource::as() -> R & {
-  std::pair<std::vector<R> &, size_t> slot = factory->findSlot<R>();
-  return slot.first[key.in_container_index];
+  std::pair<std::vector<R> &, size_t> slot = factory_->findSlot<R>();
+  return slot.first[key_.in_container_index];
 }
 
 auto main(int, char *[]) -> int {
@@ -108,7 +118,7 @@ auto main(int, char *[]) -> int {
   std::cout << r1.is<ResourceData_A>() << std::endl;
   std::cout << r1.is<ResourceData_B>() << std::endl;
   std::cout << r1.is<ResourceData_C>() << std::endl;
-  std::cout << "amount: " << r1.amount << std::endl;
+  std::cout << "amount: " << r1.amount() << std::endl;
   std::cout << "id: " << r1.as<ResourceData_A>().id << std::endl;
 
   std::cout << "\n\nR2:\n";
@@ -117,7 +127,7 @@ auto main(int, char *[]) -> int {
   std::cout << r2.is<ResourceData_A>() << std::endl;
   std::cout << r2.is<ResourceData_B>() << std::endl;
   std::cout << r2.is<ResourceData_C>() << std::endl;
-  std::cout << "amount: " << r2.amount << std::endl;
+  std::cout << "amount: " << r2.amount() << std::endl;
   std::cout << "name: " << r2.as<ResourceData_B>().name << std::endl;
 
   std::cout << "\n\nR3:\n";
@@ -126,7 +136,7 @@ auto main(int, char *[]) -> int {
   std::cout << r3.is<ResourceData_A>() << std::endl;
   std::cout << r3.is<ResourceData_B>() << std::endl;
   std::cout << r3.is<ResourceData_C>() << std::endl;
-  std::cout << "amount: " << r3.amount << std::endl;
+  std::cout << "amount: " << r3.amount() << std::endl;
   std::cout << "id: " << r3.as<ResourceData_A>().id << std::endl;
 
   return 0;
